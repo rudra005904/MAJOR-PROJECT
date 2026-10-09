@@ -1,5 +1,65 @@
 // Automated Fingerprint Pattern Classification Frontend Application
 
+// State management for in-flight requests
+let _isProcessingInference = false;
+
+/**
+ * Robust JSON fetch utility with automatic retries for Render cold-starts & proxy timeouts.
+ * Completely eliminates "Unexpected token '<'" and "Unexpected end of JSON input" errors.
+ */
+async function fetchJsonSafely(url, options = {}, retries = 1) {
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch (networkErr) {
+    if (retries > 0) {
+      await new Promise(r => setTimeout(r, 1500));
+      return fetchJsonSafely(url, options, retries - 1);
+    }
+    throw new Error("Network connection dropped or server is waking up. Please retry in a few seconds.");
+  }
+
+  // Handle Render Free Tier spin-up / cold-start codes (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout)
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    if (retries > 0) {
+      await new Promise(r => setTimeout(r, 2200));
+      return fetchJsonSafely(url, options, retries - 1);
+    }
+    throw new Error("Server is currently waking up from idle on Render free tier. Please retry in 10-15 seconds.");
+  }
+
+  const rawText = await res.text();
+  if (!rawText || rawText.trim() === "") {
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status} with empty response.`);
+    }
+    return {};
+  }
+
+  let data;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json") || rawText.trim().startsWith("{") || rawText.trim().startsWith("[")) {
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      throw new Error(`Invalid response format from server (HTTP ${res.status}).`);
+    }
+  } else {
+    // Non-JSON response (e.g. Render HTML 502/504 error page)
+    if (!res.ok) {
+      throw new Error(`Server warming up (HTTP ${res.status}). Please try again.`);
+    }
+    throw new Error("Received unexpected non-JSON response from server.");
+  }
+
+  if (!res.ok) {
+    const errMsg = data?.detail || data?.message || data?.error || `Request failed with status ${res.status}`;
+    throw new Error(errMsg);
+  }
+
+  return data;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initDropzone();
@@ -115,20 +175,19 @@ function handleLocalFile(file) {
 }
 
 async function uploadAndClassify(file) {
+  if (_isProcessingInference) {
+    showToast("⏳ Processing Scan", "Please wait for current scan analysis to finish.");
+    return;
+  }
   setLoadingState(true, file.name);
   const formData = new FormData();
   formData.append("file", file);
 
   try {
-    const res = await fetch("/api/predict", {
+    const data = await fetchJsonSafely("/api/predict", {
       method: "POST",
       body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to process image.");
-    }
-    const data = await res.json();
+    }, 1);
     window._lastPredictionData = data;
     renderPredictionResult(data);
     loadHistoryTable();
@@ -143,26 +202,24 @@ async function uploadAndClassify(file) {
       banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   } catch (err) {
-    showToast("❌ Analysis Error", err.message, true);
-    alert("Inference Error: " + err.message);
+    showToast("⚠️ Biometric Analysis Notice", err.message, true);
   } finally {
     setLoadingState(false);
   }
 }
 
 async function runPreset(patternType) {
+  if (_isProcessingInference) {
+    showToast("⏳ Inference Running", "Please wait for current analysis to complete.");
+    return;
+  }
   setLoadingState(true, `${patternType.toUpperCase()} Preset`);
   try {
-    const res = await fetch("/api/predict-preset", {
+    const data = await fetchJsonSafely("/api/predict-preset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pattern_type: patternType }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Failed to run preset inference.");
-    }
-    const data = await res.json();
+    }, 2);
     window._lastPredictionData = data;
     renderPredictionResult(data);
     loadHistoryTable();
@@ -171,19 +228,33 @@ async function runPreset(patternType) {
       `Sample print classified as ${data.predicted_class_title} (${data.confidence_percentage})`
     );
   } catch (err) {
-    showToast("❌ Preset Error", err.message, true);
-    alert("Preset Error: " + err.message);
+    showToast("⚠️ Preset Notice", err.message, true);
   } finally {
     setLoadingState(false);
   }
 }
 
 function setLoadingState(isLoading, filename = "") {
+  _isProcessingInference = isLoading;
   const title = document.getElementById("pattern-title");
   const desc = document.getElementById("pattern-desc");
+  const presetCards = document.querySelectorAll(".preset-card");
+  const dropzone = document.getElementById("dropzone");
+
   if (isLoading) {
     if (title) title.textContent = `Analyzing ${filename || 'Scan'}...`;
     if (desc) desc.textContent = "Executing 6-stage image preprocessing (Noise Filter, CLAHE, Otsu, Orientation Field) and CNN inference...";
+    presetCards.forEach(c => {
+      c.style.pointerEvents = "none";
+      c.style.opacity = "0.6";
+    });
+    if (dropzone) dropzone.style.pointerEvents = "none";
+  } else {
+    presetCards.forEach(c => {
+      c.style.pointerEvents = "auto";
+      c.style.opacity = "1";
+    });
+    if (dropzone) dropzone.style.pointerEvents = "auto";
   }
 }
 
@@ -219,7 +290,7 @@ function exportOfficialPdfReport() {
 
 async function downloadBiometricPdfReport() {
   if (!window._lastPredictionData) {
-    alert("Please upload or select a fingerprint scan first before downloading a report.");
+    showToast("⚠️ Scan Required", "Please upload or select a fingerprint scan first before downloading a report.", true);
     return;
   }
 
@@ -394,32 +465,36 @@ async function loadEvaluationReport() {
   const tableBody = document.getElementById("eval-table-body");
   const cmImg = document.getElementById("eval-cm-plot");
   try {
-    const res = await fetch("/api/evaluation-report");
-    if (!res.ok) throw new Error("Could not load report");
-    const data = await res.json();
+    const data = await fetchJsonSafely("/api/evaluation-report", {}, 1);
 
-    document.getElementById("eval-accuracy").textContent = data.summary.accuracy_percentage;
-    document.getElementById("eval-f1").textContent = `${(data.summary.f1_macro * 100).toFixed(1)}%`;
+    if (data.summary) {
+      document.getElementById("eval-accuracy").textContent = data.summary.accuracy_percentage || "--";
+      document.getElementById("eval-f1").textContent = `${(data.summary.f1_macro * 100).toFixed(1)}%`;
+    }
 
-    if (data.confusion_matrix_plot) {
+    if (data.confusion_matrix_plot && cmImg) {
       cmImg.src = data.confusion_matrix_plot;
     }
 
     let rowsHtml = "";
-    for (const [cname, metrics] of Object.entries(data.per_class)) {
-      rowsHtml += `
-        <tr>
-          <td><strong style="text-transform:capitalize;">${cname}</strong></td>
-          <td>${(metrics.precision * 100).toFixed(1)}%</td>
-          <td>${(metrics.recall * 100).toFixed(1)}%</td>
-          <td>${(metrics.f1_score * 100).toFixed(1)}%</td>
-          <td>${metrics.support}</td>
-        </tr>
-      `;
+    if (data.per_class) {
+      for (const [cname, metrics] of Object.entries(data.per_class)) {
+        rowsHtml += `
+          <tr>
+            <td><strong style="text-transform:capitalize;">${cname}</strong></td>
+            <td>${(metrics.precision * 100).toFixed(1)}%</td>
+            <td>${(metrics.recall * 100).toFixed(1)}%</td>
+            <td>${(metrics.f1_score * 100).toFixed(1)}%</td>
+            <td>${metrics.support}</td>
+          </tr>
+        `;
+      }
     }
-    tableBody.innerHTML = rowsHtml;
+    if (tableBody) tableBody.innerHTML = rowsHtml;
   } catch (err) {
-    tableBody.innerHTML = `<tr><td colspan="5" style="color:#ef4444;">Evaluation report: ${err.message}</td></tr>`;
+    if (tableBody) {
+      tableBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); font-size:0.85rem; text-align:center; padding:1.5rem;">Evaluation metrics sync on wake-up (${err.message})</td></tr>`;
+    }
   }
 }
 
@@ -436,9 +511,8 @@ async function loadHistoryTable() {
 
   // 1. Fetch DB Stats
   try {
-    const statsRes = await fetch("/api/database-stats");
-    if (statsRes.ok) {
-      const stats = await statsRes.json();
+    const stats = await fetchJsonSafely("/api/database-stats", {}, 1);
+    if (stats && stats.database_type) {
       document.getElementById("db-stat-total").textContent = stats.total_examinations || 0;
       document.getElementById("db-stat-arch").textContent = stats.arch_count || 0;
       document.getElementById("db-stat-loop").textContent = stats.loop_count || 0;
@@ -452,7 +526,7 @@ async function loadHistoryTable() {
       }
     }
   } catch (err) {
-    console.error("Failed to load db stats:", err);
+    console.warn("Notice: Database stats will sync once cloud database responds:", err.message);
   }
 
   // 2. Fetch Examinations
@@ -465,13 +539,11 @@ async function loadHistoryTable() {
       url += `&search=${encodeURIComponent(window._currentHistorySearch)}`;
     }
 
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Could not load examination records");
-    const data = await res.json();
+    const data = await fetchJsonSafely(url, {}, 1);
     renderHistoryTable(data.records || []);
   } catch (err) {
     if (tableBody) {
-      tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444; padding:2rem;">Error loading records: ${err.message}</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">Syncing examination records... (${err.message})</td></tr>`;
     }
   }
 }
@@ -542,9 +614,7 @@ function handleHistorySearch(keyword) {
 async function downloadHistoryReport(examId) {
   showToast("⏳ Loading Case", `Fetching record ${examId} from database...`);
   try {
-    const res = await fetch(`/api/examinations/${examId}`);
-    if (!res.ok) throw new Error("Record not found");
-    const record = await res.json();
+    const record = await fetchJsonSafely(`/api/examinations/${examId}`, {}, 1);
 
     // Build payload for PDF generator
     const payload = {
@@ -565,19 +635,20 @@ async function downloadHistoryReport(examId) {
       body: JSON.stringify(payload),
     });
 
-    if (!pdfRes.ok) throw new Error("PDF generation failed");
+    if (!pdfRes.ok) throw new Error("PDF generation failed on server");
 
     const blob = await pdfRes.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
+    const cleanId = record.examination_id || examId;
     a.href = url;
-    a.download = `PU_Biometric_Report_${record.examination_id}.pdf`;
+    a.download = `PU_Biometric_Report_${cleanId}.pdf`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     a.remove();
 
-    showToast("📥 Report Downloaded", `Saved PU_Biometric_Report_${record.examination_id}.pdf`);
+    showToast("📥 Report Downloaded", `Saved PU_Biometric_Report_${cleanId}.pdf`);
   } catch (err) {
     showToast("❌ Download Failed", err.message, true);
   }
