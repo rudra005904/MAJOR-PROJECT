@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automated Fingerprint Pattern Classification Using a CNN | Parul University</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="top-nav">
+    <div class="brand-section">
+      <div class="brand-icon">🔍</div>
+      <div class="brand-titles">
+        <h1>Automated Fingerprint Pattern Classification</h1>
+        <div class="brand-sub">
+          <span>Parul University</span>
+          <span class="badge-naac">NAAC A++</span>
+          <span class="badge-tag">CNN Biometrics</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" id="btn-project-credits">
+        <span>🎓</span> Project Credits
+      </button>
+      <a href="/docs" target="_blank" class="btn-secondary">
+        <span>⚡</span> REST API Docs
+      </a>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs-bar">
+    <button class="tab-btn active" data-tab="tab-classify">
+      <span>🎯</span> Live Classifier & Preprocessing
+    </button>
+    <button class="tab-btn" data-tab="tab-pipeline">
+      <span>⚙️</span> Preprocessing Pipeline
+    </button>
+    <button class="tab-btn" data-tab="tab-architecture">
+      <span>🧠</span> CNN Architecture
+    </button>
+    <button class="tab-btn" data-tab="tab-evaluation">
+      <span>📊</span> Rigorous Evaluation & Confusion Matrix
+    </button>
+    <button class="tab-btn" data-tab="tab-roadmap">
+      <span>🗺️</span> 5-Phase Roadmap & Mitigations
+    </button>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="main-content">
+
+    <!-- TAB 1: Live Classifier & Preprocessing Inspector -->
+    <section id="tab-classify" class="tab-panel active">
+      <div class="classifier-grid">
+        
+        <!-- Input & Controls Column -->
+        <div class="input-col">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title"><span>📥</span> Image Input</h2>
+            </div>
+            
+            <div class="dropzone" id="dropzone">
+              <div id="dropzone-idle-content">
+                <div class="dropzone-icon">🖨️</div>
+                <p><strong>Drag & Drop</strong> fingerprint scan or PDF here</p>
+                <p class="dropzone-sub">Supports BMP, PNG, JPG, TIFF, PDF</p>
+              </div>
+              <div id="dropzone-loaded-content" style="display:none;">
+                <div class="uploaded-preview-wrap">
+                  <img id="dropzone-preview-img" src="" alt="Uploaded Scan">
+                  <span class="uploaded-pill-badge">✅ Scan Loaded</span>
+                </div>
+                <div class="uploaded-file-name" id="dropzone-filename">sample.bmp</div>
+                <div class="uploaded-file-meta" id="dropzone-filemeta">64.0 KB · BMP Format</div>
+                <button type="button" class="btn-change-file" id="btn-change-file">🔄 Change File</button>
+              </div>
+              <input type="file" id="file-input" accept="image/*,.pdf" style="display:none">
+            </div>
+
+            <div class="presets-section">
+              <div class="section-label">Or Select Sample Test Pattern:</div>
+              <div class="presets-grid" id="presets-container">
+                <!-- Preset cards rendered via JS -->
+                <div class="preset-card" onclick="runPreset('arch')">
+                  <div class="preset-thumbnail" style="background:#064e3b; display:flex; align-items:center; justify-content:center; font-size:1.5rem">🏔️</div>
+                  <div class="preset-name">Arch Print</div>
+                </div>
+                <div class="preset-card" onclick="runPreset('loop')">
+                  <div class="preset-thumbnail" style="background:#1e3a8a; display:flex; align-items:center; justify-content:center; font-size:1.5rem">🔄</div>
+                  <div class="preset-name">Loop Print</div>
+                </div>
+                <div class="preset-card" onclick="runPreset('whorl')">
+                  <div class="preset-thumbnail" style="background:#581c87; display:flex; align-items:center; justify-content:center; font-size:1.5rem">🌀</div>
+                  <div class="preset-name">Whorl Print</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Inference Output Column -->
+        <div class="results-col">
+          <div class="results-container">
+
+            <!-- Upload Verification Banner -->
+            <div class="upload-success-banner" id="upload-success-banner" style="display:none;">
+              <div class="upload-banner-left">
+                <div class="upload-banner-icon" id="upload-banner-icon">✅</div>
+                <div class="upload-banner-info">
+                  <div class="upload-banner-title">
+                    <span id="banner-file-status">Biometric Scan Verified & Ingested</span>
+                    <span class="upload-banner-pill" id="banner-format-pill">BMP</span>
+                  </div>
+                  <div class="upload-banner-meta" id="banner-meta-text">
+                    100__M_Left_index_finger.BMP (64.0 KB) · Preprocessed in 78 ms
+                  </div>
+                </div>
+              </div>
+              <div class="upload-banner-actions">
+                <button type="button" class="btn-report-download" id="btn-download-pdf-direct" onclick="downloadBiometricPdfReport()">
+                  <span>📥</span> Download Report (.PDF)
+                </button>
+                <button type="button" class="btn-report-print" onclick="exportOfficialPdfReport()">
+                  <span>🖨️</span> Print View
+                </button>
+              </div>
+            </div>
+            
+            <!-- Hero Classification Banner -->
+            <div class="hero-prediction-card" id="hero-prediction">
+              <div class="hero-top-bar">
+                <div class="hero-badge-tag" id="pattern-badge" style="background:rgba(59,130,246,0.2); color:#60a5fa">
+                  Biometric Classification Result
+                </div>
+                <div class="hero-file-indicator" id="hero-file-indicator" style="display:none;">
+                  <span class="file-icon">📄</span>
+                  <span id="hero-filename-text">No File</span>
+                  <span class="file-latency-badge" id="hero-latency-badge">-- ms</span>
+                </div>
+                <button type="button" class="btn-export-pdf" id="btn-export-pdf" title="Download Official PDF Biometric Report" onclick="downloadBiometricPdfReport()">
+                  <span>📄</span> Download Report (.PDF)
+                </button>
+              </div>
+
+              <div class="hero-main-row">
+                <div class="hero-scan-thumb-box" id="hero-thumb-box" style="display:none;">
+                  <img id="hero-scan-thumb" src="" alt="Analyzed Scan">
+                  <span class="thumb-lbl">Uploaded Scan</span>
+                </div>
+                <div class="hero-text-content">
+                  <h2 class="pattern-title" id="pattern-title">Awaiting Input Scan...</h2>
+                  <p class="pattern-desc" id="pattern-desc">
+                    Upload a raw fingerprint scan or click a sample preset above to run the 6-stage preprocessing cleanup and deep convolutional feature extraction.
+                  </p>
+                  <div class="pdf-extraction-note" id="hero-pdf-note" style="display:none;">
+                    <span>📄</span> <span id="hero-pdf-text">Extracted from PDF Document</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="metrics-row">
+                <div class="metric-stat">
+                  <span class="metric-val" id="val-confidence">--%</span>
+                  <span class="metric-lbl">Model Confidence</span>
+                </div>
+                <div class="metric-stat">
+                  <span class="metric-val" id="val-runnerup">--</span>
+                  <span class="metric-lbl">Runner-up Class</span>
+                </div>
+                <div class="metric-stat">
+                  <span class="metric-val" id="val-prevalence">--</span>
+                  <span class="metric-lbl">Population Prevalence</span>
+                </div>
+                <div class="metric-stat">
+                  <span class="metric-val" id="val-latency">-- ms</span>
+                  <span class="metric-lbl">Inference Latency</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Probability Distribution & Borderline Detection -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title"><span>📈</span> Softmax Output Probability Distribution</h3>
+                <span class="badge-tag">Softmax Activation</span>
+              </div>
+              <div class="prob-bars-card">
+                
+                <div class="prob-item">
+                  <div class="prob-header">
+                    <span>Arch (No core, no delta)</span>
+                    <span id="prob-val-arch">0.0%</span>
+                  </div>
+                  <div class="prob-bar-track">
+                    <div class="prob-bar-fill fill-arch" id="bar-arch" style="width:0%"></div>
+                  </div>
+                </div>
+
+                <div class="prob-item">
+                  <div class="prob-header">
+                    <span>Loop (1 core, 1 delta)</span>
+                    <span id="prob-val-loop">0.0%</span>
+                  </div>
+                  <div class="prob-bar-track">
+                    <div class="prob-bar-fill fill-loop" id="bar-loop" style="width:0%"></div>
+                  </div>
+                </div>
+
+                <div class="prob-item">
+                  <div class="prob-header">
+                    <span>Whorl (2 deltas, concentric rings)</span>
+                    <span id="prob-val-whorl">0.0%</span>
+                  </div>
+                  <div class="prob-bar-track">
+                    <div class="prob-bar-fill fill-whorl" id="bar-whorl" style="width:0%"></div>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Near-Miss Borderline Alert Box -->
+              <div id="borderline-alert-container" style="margin-top:1.25rem;"></div>
+            </div>
+
+            <!-- Visual Preprocessing Pipeline Inspection Stages -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title"><span>🔬</span> Preprocessing Stages Visual Inspector (Slide 7)</h3>
+                <span class="badge-tag">End-to-End Pipeline</span>
+              </div>
+              <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">
+                Visual inspection of raw image cleaning, noise suppression, CLAHE contrast equalization, Otsu background segmentation, and ridge orientation field map:
+              </p>
+              <div class="pipeline-gallery" id="pipeline-gallery">
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 1</div>
+                  <img class="pipeline-img" id="img-step-original" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="Original">
+                  <div class="step-name">Input & Resized</div>
+                </div>
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 2</div>
+                  <img class="pipeline-img" id="img-step-denoised" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="Denoised">
+                  <div class="step-name">Noise Filtered</div>
+                </div>
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 3</div>
+                  <img class="pipeline-img" id="img-step-enhanced" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="CLAHE Enhanced">
+                  <div class="step-name">CLAHE Enhanced</div>
+                </div>
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 4</div>
+                  <img class="pipeline-img" id="img-step-mask" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="Segment Mask">
+                  <div class="step-name">Otsu Foreg. Mask</div>
+                </div>
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 5</div>
+                  <img class="pipeline-img" id="img-step-segmented" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="Segmented">
+                  <div class="step-name">Cleaned Print</div>
+                </div>
+                <div class="pipeline-step-card">
+                  <div class="step-badge">Stage 6</div>
+                  <img class="pipeline-img" id="img-step-orientation" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' fill='%23222'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E" alt="Orientation Map">
+                  <div class="step-name">Ridge Orientation</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: Preprocessing Pipeline Deep-Dive -->
+    <section id="tab-pipeline" class="tab-panel">
+      <div class="card" style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.5rem; font-weight:800; margin-bottom:0.5rem;">Preparing the Image: Preprocessing Pipeline (Slide 7)</h2>
+        <p style="color:var(--text-muted); font-size:0.95rem;">
+          To ensure reliable pattern classification across diverse biometric sensors, input images pass through standard image cleanup and dataset preparation before entering the neural network.
+        </p>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem;">
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; color:#60a5fa; margin-bottom:0.75rem;">1. Grayscale & Fixed Resolution</h3>
+          <p style="color:var(--text-muted); font-size:0.88rem; line-height:1.6;">
+            Color scans are converted to single-channel 8-bit grayscale and standardized to 128×128 pixels using anti-aliased interpolation.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; color:#34d399; margin-bottom:0.75rem;">2. Noise Attenuation & Ridge Contrast</h3>
+          <p style="color:var(--text-muted); font-size:0.88rem; line-height:1.6;">
+            Sensor grain and platen dirt are attenuated via Gaussian filtering. CLAHE (Contrast Limited Adaptive Histogram Equalization) boosts local ridge-valley gradient definition.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; color:#a78bfa; margin-bottom:0.75rem;">3. Fingerprint Region Segmentation</h3>
+          <p style="color:var(--text-muted); font-size:0.88rem; line-height:1.6;">
+            Otsu automated thresholding and morphological closing extract the active fingerprint area from blank background paper or scanner borders.
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; color:#f59e0b; margin-bottom:0.75rem;">4. Pixel Normalization & Batching</h3>
+          <p style="color:var(--text-muted); font-size:0.88rem; line-height:1.6;">
+            Pixel intensities are normalized to the [0.0, 1.0] floating point range to ensure rapid gradient descent convergence during CNN backpropagation.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: CNN Architecture Inspector -->
+    <section id="tab-architecture" class="tab-panel">
+      <div class="card" style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.5rem; font-weight:800; margin-bottom:0.5rem;">Learning the Pattern: CNN Architecture (Slide 8)</h2>
+        <p style="color:var(--text-muted); font-size:0.95rem;">
+          The hierarchical convolutional neural network learns discriminative features directly from raw ridge patterns end-to-end, removing hand-crafted minutiae rules.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">Hierarchical Feature Flow</h3>
+        
+        <div style="display:flex; flex-direction:column; gap:0.75rem;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>Input Layer</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">Grayscale Fingerprint Scan Tensor</div>
+            </div>
+            <span class="badge-tag">Shape: [1, 128, 128]</span>
+          </div>
+
+          <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.2); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:#60a5fa;">Stage 1: Local Ridge Orientation & Curvature</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">2× Conv2D(32 channels, 3×3) + BatchNorm + ReLU + MaxPool2D(2×2)</div>
+            </div>
+            <span class="badge-tag">Shape: [32, 64, 64]</span>
+          </div>
+
+          <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.3); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:#60a5fa;">Stage 2: Intermediate Recurvature & Ridge Flow</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">2× Conv2D(64 channels, 3×3) + BatchNorm + ReLU + MaxPool2D(2×2)</div>
+            </div>
+            <span class="badge-tag">Shape: [64, 32, 32]</span>
+          </div>
+
+          <div style="background:rgba(139,92,246,0.08); border:1px solid rgba(139,92,246,0.3); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:#a78bfa;">Stage 3: Core & Delta Pattern Structures</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">2× Conv2D(128 channels, 3×3) + BatchNorm + ReLU + MaxPool2D(2×2)</div>
+            </div>
+            <span class="badge-tag">Shape: [128, 16, 16]</span>
+          </div>
+
+          <div style="background:rgba(139,92,246,0.12); border:1px solid rgba(139,92,246,0.4); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:#a78bfa;">Stage 4: Global Pattern Topology</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">Conv2D(128 channels, 3×3) + AdaptiveAvgPool2D(4×4)</div>
+            </div>
+            <span class="badge-tag">Shape: [128, 4, 4]</span>
+          </div>
+
+          <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:10px; padding:1rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:#34d399;">Classification Head & Softmax</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted);">Flatten (2048) -> Dense(128) + ReLU + Dropout(0.35) -> Dense(3) + Softmax</div>
+            </div>
+            <span class="badge-tag" style="background:rgba(16,185,129,0.2); color:#34d399;">3 Classes: Arch, Loop, Whorl</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Rigorous Evaluation Report -->
+    <section id="tab-evaluation" class="tab-panel">
+      <div class="card" style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.5rem; font-weight:800; margin-bottom:0.5rem;">Rigorous Performance Evaluation (Slide 11, 12, 14)</h2>
+        <p style="color:var(--text-muted); font-size:0.95rem;">
+          Evaluated end-to-end on held-out test data — measuring accuracy, precision, recall, F1-score, confusion matrix, and borderline near-misses.
+        </p>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem;">
+        
+        <!-- Summary & Per-Class Metrics -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title"><span>📋</span> Performance Metrics (Slide 12)</h3>
+            <button class="btn-secondary" onclick="loadEvaluationReport()"><span>🔄</span> Refresh</button>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:1rem; margin-bottom:1.25rem;">
+            <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:10px; padding:1rem;">
+              <div style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase;">Overall Accuracy</div>
+              <div style="font-size:1.8rem; font-weight:800; color:#34d399;" id="eval-accuracy">--</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:10px; padding:1rem;">
+              <div style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase;">Macro F1-Score</div>
+              <div style="font-size:1.8rem; font-weight:800; color:#60a5fa;" id="eval-f1">--</div>
+            </div>
+          </div>
+
+          <h4 style="font-size:0.9rem; font-weight:700; margin-bottom:0.5rem; text-transform:uppercase; color:var(--text-dim);">
+            Per-Class Performance Breakdown
+          </h4>
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th>Class</th>
+                <th>Precision</th>
+                <th>Recall</th>
+                <th>F1-Score</th>
+                <th>Support</th>
+              </tr>
+            </thead>
+            <tbody id="eval-table-body">
+              <tr><td colspan="5" style="text-align:center; color:var(--text-dim);">Loading benchmark metrics...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Confusion Matrix Visualization -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title"><span>🎯</span> Confusion Matrix (Slide 12 item 5)</h3>
+            <span class="badge-tag">True vs. Predicted</span>
+          </div>
+          <div style="text-align:center;">
+            <img id="eval-cm-plot" style="max-width:100%; border-radius:10px; border:1px solid var(--border-color);" alt="Confusion Matrix">
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 5: Roadmap & Mitigations -->
+    <section id="tab-roadmap" class="tab-panel">
+      <div class="card" style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.5rem; font-weight:800; margin-bottom:0.5rem;">Five Phases from Concept to Demonstration (Slide 13 & 14)</h2>
+        <p style="color:var(--text-muted); font-size:0.95rem;">
+          Roadmap progression and engineering mitigations for real-world biometric challenges.
+        </p>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem;">
+        <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">Known Challenges and How to Address Them (Slide 14)</h3>
+        <table class="metrics-table">
+          <thead>
+            <tr>
+              <th style="width:35%;">Challenge</th>
+              <th>Engineering Mitigation (Implemented)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Limited or imbalanced training data</strong></td>
+              <td>Data augmentation (rotation, affine shift, contrast) & inverse class-weighted loss.</td>
+            </tr>
+            <tr>
+              <td><strong>Similar inter-class patterns (loop vs. whorl)</strong></td>
+              <td>Near-miss borderline margin inspection & confusion-matrix error tracking.</td>
+            </tr>
+            <tr>
+              <td><strong>Variable image quality (smudges, partial prints)</strong></td>
+              <td>Adaptive CLAHE ridge contrast enhancement & Otsu region segmentation.</td>
+            </tr>
+            <tr>
+              <td><strong>Overfitting on small dataset</strong></td>
+              <td>Dropout (0.35), batch normalization, and early stopping with patience on validation loss.</td>
+            </tr>
+            <tr>
+              <td><strong>Compute cost of training</strong></td>
+              <td>Compact lightweight 4-stage CNN architecture capable of fast convergence.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Project Credits Modal -->
+  <div class="modal-overlay" id="credits-modal">
+    <div class="modal-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 style="font-size:1.25rem; font-weight:700;">Project Details & Contributors</h2>
+        <button onclick="closeModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.5rem; cursor:pointer;">&times;</button>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
+        Automated Fingerprint Pattern Classification Using a CNN (Parul University, NAAC A++)
+      </p>
+
+      <h4 style="font-size:0.9rem; text-transform:uppercase; color:var(--text-dim); margin-bottom:0.5rem;">Student Researchers:</h4>
+      <ul style="list-style:none; display:flex; flex-direction:column; gap:0.4rem; margin-bottom:1.25rem; font-size:0.9rem;">
+        <li>• Abhishek Dave: 2403031077002</li>
+        <li>• Rudra Pavasiya: 2403031077018</li>
+        <li>• Aditya Raj: 2303031070002</li>
+        <li>• Krutarth Valera: 2303031070009</li>
+      </ul>
+
+      <h4 style="font-size:0.9rem; text-transform:uppercase; color:var(--text-dim); margin-bottom:0.5rem;">Faculty Mentors:</h4>
+      <ul style="list-style:none; display:flex; flex-direction:column; gap:0.4rem; font-size:0.9rem;">
+        <li>• Prof. Anuradha Gharghe</li>
+        <li>• Prof. Archana Dubey</li>
+        <li>• Prof. Saurav Bhardwaj</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notification -->
+  <div id="toast-notification" class="toast-popup">
+    <div class="toast-icon" id="toast-icon">✅</div>
+    <div class="toast-content">
+      <div class="toast-title" id="toast-title">Scan Processed Successfully</div>
+      <div class="toast-desc" id="toast-desc">Fingerprint analyzed in 32ms</div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
