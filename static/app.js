@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initDropzone();
   initModal();
   loadEvaluationReport();
+  loadHistoryTable();
 });
 
 // Tab Navigation
@@ -130,6 +131,7 @@ async function uploadAndClassify(file) {
     const data = await res.json();
     window._lastPredictionData = data;
     renderPredictionResult(data);
+    loadHistoryTable();
     showToast(
       "✅ Biometric Scan Analyzed",
       `${file.name} successfully classified as ${data.predicted_class_title} (${data.confidence_percentage})`
@@ -163,6 +165,7 @@ async function runPreset(patternType) {
     const data = await res.json();
     window._lastPredictionData = data;
     renderPredictionResult(data);
+    loadHistoryTable();
     showToast(
       "✅ Preset Loaded & Analyzed",
       `Sample print classified as ${data.predicted_class_title} (${data.confidence_percentage})`
@@ -417,5 +420,165 @@ async function loadEvaluationReport() {
     tableBody.innerHTML = rowsHtml;
   } catch (err) {
     tableBody.innerHTML = `<tr><td colspan="5" style="color:#ef4444;">Evaluation report: ${err.message}</td></tr>`;
+  }
+}
+
+// ==========================================
+// Centralized Biometric Database Archive Tab
+// ==========================================
+window._currentHistoryFilter = "";
+window._currentHistorySearch = "";
+window._historySearchTimeout = null;
+
+async function loadHistoryTable() {
+  const tableBody = document.getElementById("history-table-body");
+  const badgeEl = document.getElementById("db-active-badge");
+
+  // 1. Fetch DB Stats
+  try {
+    const statsRes = await fetch("/api/database-stats");
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      document.getElementById("db-stat-total").textContent = stats.total_examinations || 0;
+      document.getElementById("db-stat-arch").textContent = stats.arch_count || 0;
+      document.getElementById("db-stat-loop").textContent = stats.loop_count || 0;
+      document.getElementById("db-stat-whorl").textContent = stats.whorl_count || 0;
+      document.getElementById("db-stat-borderline").textContent = stats.borderline_count || 0;
+      if (badgeEl) {
+        const isPg = stats.database_type.includes("PostgreSQL");
+        badgeEl.textContent = isPg ? "🟢 Connected: Supabase PostgreSQL" : "🔵 Connected: SQLite Local";
+        badgeEl.style.borderColor = isPg ? "rgba(16, 185, 129, 0.4)" : "rgba(59, 130, 246, 0.4)";
+        badgeEl.style.color = isPg ? "#34d399" : "#60a5fa";
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load db stats:", err);
+  }
+
+  // 2. Fetch Examinations
+  try {
+    let url = `/api/examinations?limit=100`;
+    if (window._currentHistoryFilter) {
+      url += `&pattern=${encodeURIComponent(window._currentHistoryFilter)}`;
+    }
+    if (window._currentHistorySearch) {
+      url += `&search=${encodeURIComponent(window._currentHistorySearch)}`;
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Could not load examination records");
+    const data = await res.json();
+    renderHistoryTable(data.records || []);
+  } catch (err) {
+    if (tableBody) {
+      tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444; padding:2rem;">Error loading records: ${err.message}</td></tr>`;
+    }
+  }
+}
+
+function renderHistoryTable(records) {
+  const tableBody = document.getElementById("history-table-body");
+  if (!tableBody) return;
+
+  if (records.length === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align:center; color:var(--text-muted); padding:2.5rem;">
+          📂 No biometric examination records found in the database.
+          <br><span style="font-size:0.8rem; color:var(--text-dim); margin-top:0.4rem; display:inline-block;">Upload a fingerprint scan or click a sample preset to log your first case!</span>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = "";
+  for (const r of records) {
+    const cname = (r.predicted_class || "").toLowerCase();
+    const badgeClass = cname === "arch" ? "badge-pattern-arch" : cname === "loop" ? "badge-pattern-loop" : "badge-pattern-whorl";
+    const borderlineTag = r.is_borderline ? `<span style="font-size:0.7rem; color:#f59e0b; margin-left:0.3rem;" title="Borderline Near-Miss">⚠️</span>` : "";
+
+    html += `
+      <tr>
+        <td><strong style="color:#f3f4f6;">${r.examination_id}</strong></td>
+        <td style="color:var(--text-muted); font-size:0.82rem;">${r.created_at || "N/A"}</td>
+        <td>
+          <div style="font-weight:600; color:#fff;">${r.filename}</div>
+          <div style="font-size:0.75rem; color:var(--text-dim);">${r.file_type} · ${r.filesize_formatted}</div>
+        </td>
+        <td>
+          <span class="${badgeClass}">${r.predicted_class_title || r.predicted_class}</span>
+          ${borderlineTag}
+        </td>
+        <td><strong style="color:#fff;">${r.confidence_percentage}</strong></td>
+        <td style="color:var(--text-muted); font-size:0.82rem;">${r.latency_ms || 32} ms</td>
+        <td>
+          <button type="button" class="btn-table-pdf" onclick="downloadHistoryReport('${r.examination_id}')">
+            <span>📄</span> PDF
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+  tableBody.innerHTML = html;
+}
+
+function filterHistory(pattern) {
+  window._currentHistoryFilter = pattern;
+  document.querySelectorAll(".history-filter-group .filter-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-filter") === pattern);
+  });
+  loadHistoryTable();
+}
+
+function handleHistorySearch(keyword) {
+  clearTimeout(window._historySearchTimeout);
+  window._historySearchTimeout = setTimeout(() => {
+    window._currentHistorySearch = keyword.trim();
+    loadHistoryTable();
+  }, 300);
+}
+
+async function downloadHistoryReport(examId) {
+  showToast("⏳ Loading Case", `Fetching record ${examId} from database...`);
+  try {
+    const res = await fetch(`/api/examinations/${examId}`);
+    if (!res.ok) throw new Error("Record not found");
+    const record = await res.json();
+
+    // Build payload for PDF generator
+    const payload = {
+      filename: record.filename,
+      file_type: record.file_type,
+      filesize_formatted: record.filesize_formatted,
+      predicted_class_title: record.predicted_class_title,
+      confidence_percentage: record.confidence_percentage,
+      probabilities: record.probabilities,
+      latency_ms: record.latency_ms,
+      pdf_info: record.pdf_info,
+      source: record.source,
+    };
+
+    const pdfRes = await fetch("/api/export-pdf-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!pdfRes.ok) throw new Error("PDF generation failed");
+
+    const blob = await pdfRes.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `PU_Biometric_Report_${record.examination_id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+
+    showToast("📥 Report Downloaded", `Saved PU_Biometric_Report_${record.examination_id}.pdf`);
+  } catch (err) {
+    showToast("❌ Download Failed", err.message, true);
   }
 }

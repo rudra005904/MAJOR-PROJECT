@@ -31,6 +31,7 @@ from src.dataset import (
     load_samples_from_directory,
     stratified_split,
 )
+from src.database import get_db_stats, get_examination_by_id, list_examinations, log_examination
 from src.evaluation import EvaluationReport, plot_confusion_matrix_b64
 from src.inference import FingerprintClassifier
 from src.model import FingerprintCNN
@@ -182,6 +183,13 @@ def predict_preset(req: PresetRequest) -> Dict[str, Any]:
     result["filesize_formatted"] = "64.0 KB (Curated Real Scan)"
     result["latency_ms"] = latency_ms
     result["source"] = "preset"
+
+    try:
+        rec = log_examination(result)
+        result["examination_id"] = rec.examination_id
+    except Exception:
+        pass
+
     return result
 
 
@@ -246,6 +254,13 @@ async def predict_uploaded_image(file: UploadFile = File(...)) -> Dict[str, Any]
         result["source"] = "upload"
         if pdf_info:
             result["pdf_info"] = pdf_info
+
+        try:
+            rec = log_examination(result)
+            result["examination_id"] = rec.examination_id
+        except Exception:
+            pass
+
         return result
     except HTTPException:
         raise
@@ -269,6 +284,32 @@ async def export_pdf_report(payload: Dict[str, Any]) -> Response:
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF report: {str(exc)}")
+
+
+@app.get("/api/examinations")
+def get_examinations(
+    limit: int = 50,
+    offset: int = 0,
+    pattern: Optional[str] = None,
+    search: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Retrieves paginated biometric examinations from the database (PostgreSQL or SQLite)."""
+    return list_examinations(limit=limit, offset=offset, pattern_filter=pattern, search=search)
+
+
+@app.get("/api/examinations/{exam_id}")
+def get_examination(exam_id: str) -> Dict[str, Any]:
+    """Retrieves a single examination by examination ID."""
+    rec = get_examination_by_id(exam_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Examination not found.")
+    return rec
+
+
+@app.get("/api/database-stats")
+def get_database_statistics() -> Dict[str, Any]:
+    """Returns database summary statistics and active database type."""
+    return get_db_stats()
 
 
 @app.get("/api/evaluation-report")

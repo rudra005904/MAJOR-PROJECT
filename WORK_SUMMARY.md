@@ -179,3 +179,13 @@ In response to user feedback regarding file upload transparency and visibility o
 4. **PDF Document Support:** Seamlessly parses uploaded `.pdf` documents using `pypdf`, extracting the embedded fingerprint scan automatically and reporting page extraction details.
 5. **Official Biometric PDF Forensic Report Generation:** Added `src/report_generator.py` powered by `reportlab` to generate publication-grade, official Parul University biometric forensic examination reports downloadable via `Download Report (.PDF)`.
 6. **Print View:** Provided print styles (`@media print`) for clean, publication-ready physical printouts and save-as-PDF.
+
+---
+
+## 🗄️ Biometric Database Architecture (Dual SQLite + PostgreSQL Cloud Support)
+Built a unified, fail-safe database layer in [src/database.py](file:///c:/Users/Asus/OneDrive/Desktop/fingerprint_pattern_workflow/src/database.py):
+1. **Zero-Setup Local SQLite (`data/biometrics.db`):** Automatically initializes when running locally offline without requiring any external database credentials.
+2. **Cloud PostgreSQL Support (Supabase / Neon):** Seamlessly connects to cloud PostgreSQL when `DATABASE_URL` is set in `.env`.
+3. **Automated Audit Logging:** Every uploaded scan or sample preset is automatically logged with an examination ID (`PU-BIO-XXXXXX`), timestamps, filename, format, predicted class, probabilities, borderline status, and latency.
+4. **Interactive "Biometric Case Archive" Web Tab:** Features real-time statistics counters, live search, pattern filters, and instant re-download buttons for past examination PDF reports.
+5. **Testing & Stability:** Added `tests/test_database.py`. All **47 unit and integration tests** passing (100% pass rate).
